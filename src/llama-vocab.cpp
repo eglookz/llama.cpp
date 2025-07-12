@@ -3,7 +3,7 @@
 #include "ggml.h"
 #include "gguf.h"
 #include "llama-impl.h"
-#include "llama-model-loader.h"
+#include "llama-lazy-model-loader.h"
 
 #include "unicode.h"
 
@@ -1302,7 +1302,7 @@ struct llama_vocab::impl {
 
     ~impl() = default;
 
-    void load(llama_model_loader & ml, const LLM_KV & kv);
+    void load(llama_lazy_model_loader & ml, const LLM_KV & kv);
 
     enum llama_vocab_type get_type() const;
 
@@ -1371,7 +1371,7 @@ private:
     const llama_vocab & vocab;
 };
 
-void llama_vocab::impl::load(llama_model_loader & ml, const LLM_KV & kv) {
+void llama_vocab::impl::load(llama_lazy_model_loader & ml, const LLM_KV & kv) {
     struct gguf_context * ctx = ml.meta.get();
 
     // determine vocab type
@@ -2823,7 +2823,7 @@ llama_vocab::llama_vocab() : pimpl(new impl(*this)) {
 llama_vocab::~llama_vocab() {
 }
 
-void llama_vocab::load(llama_model_loader & ml, const LLM_KV & kv) {
+void llama_vocab::load(llama_lazy_model_loader & ml, const LLM_KV & kv) {
     pimpl->load(ml, kv);
 }
 

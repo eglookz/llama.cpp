@@ -4,7 +4,7 @@
 #include "llama-mmap.h"
 #include "llama-batch.h"
 #include "llama-cparams.h"
-#include "llama-model-loader.h"
+#include "llama-lazy-model-loader.h"
 
 #include "llama-kv-cache-unified.h"
 #include "llama-kv-cache-unified-iswa.h"
@@ -419,19 +419,19 @@ llama_model::llama_model(const llama_model_params & params) : params(params), pi
 
 llama_model::~llama_model() {}
 
-void llama_model::load_stats(llama_model_loader & ml) {
+void llama_model::load_stats(llama_lazy_model_loader & ml) {
     pimpl->n_elements = ml.n_elements;
     pimpl->n_bytes = ml.n_bytes;
 }
 
-void llama_model::load_arch(llama_model_loader & ml) {
+void llama_model::load_arch(llama_lazy_model_loader & ml) {
     arch = ml.get_arch();
     if (arch == LLM_ARCH_UNKNOWN) {
         throw std::runtime_error("unknown model architecture: '" + ml.get_arch_name() + "'");
     }
 }
 
-void llama_model::load_hparams(llama_model_loader & ml) {
+void llama_model::load_hparams(llama_lazy_model_loader & ml) {
     const gguf_context * ctx = ml.meta.get();
 
     // get metadata as string
@@ -1677,13 +1677,13 @@ void llama_model::load_hparams(llama_model_loader & ml) {
     hparams.rope_type = llama_model_rope_type(this);
 }
 
-void llama_model::load_vocab(llama_model_loader & ml) {
+void llama_model::load_vocab(llama_lazy_model_loader & ml) {
     const auto kv = LLM_KV(arch);
 
     vocab.load(ml, kv);
 }
 
-bool llama_model::load_tensors(llama_model_loader & ml) {
+bool llama_model::load_tensors(llama_lazy_model_loader & ml) {
     const auto & split_mode   = params.split_mode;
     const auto & n_gpu_layers = params.n_gpu_layers;
     const auto & use_mlock    = params.use_mlock;
@@ -1790,8 +1790,8 @@ bool llama_model::load_tensors(llama_model_loader & ml) {
         return it->second;
     };
 
-    const auto TENSOR_DUPLICATED   = llama_model_loader::TENSOR_DUPLICATED;
-    const auto TENSOR_NOT_REQUIRED = llama_model_loader::TENSOR_NOT_REQUIRED;
+    const auto TENSOR_DUPLICATED   = llama_lazy_model_loader::TENSOR_DUPLICATED;
+    const auto TENSOR_NOT_REQUIRED = llama_lazy_model_loader::TENSOR_NOT_REQUIRED;
 
     // create tensors for the weights
     {

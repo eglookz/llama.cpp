@@ -1,7 +1,7 @@
 #include "llama-quant.h"
 #include "llama-impl.h"
 #include "llama-model.h"
-#include "llama-model-loader.h"
+#include "llama-lazy-model-loader.h"
 
 #include <algorithm>
 #include <cmath>
@@ -583,7 +583,7 @@ static void llama_model_quantize_impl(const std::string & fname_inp, const std::
     }
 
     std::vector<std::string> splits = {};
-    llama_model_loader ml(fname_inp, splits, use_mmap, /*check_tensors*/ true, kv_overrides, nullptr);
+    llama_lazy_model_loader ml(fname_inp, splits, use_mmap, /*check_tensors*/ true, kv_overrides, nullptr);
     ml.init_mappings(false); // no prefetching
 
     llama_model model(llama_model_default_params());
@@ -656,7 +656,7 @@ static void llama_model_quantize_impl(const std::string & fname_inp, const std::
     int pruned_attention_w = 0;
 
     // make a list of weights
-    std::vector<const llama_model_loader::llama_tensor_weight *> tensors;
+    std::vector<const llama_lazy_model_loader::llama_tensor_weight *> tensors;
     tensors.reserve(ml.weights_map.size());
     for (const auto & it : ml.weights_map) {
         const std::string remapped_name(remap_layer(it.first, prune_list, mapped, blk_id));
@@ -680,7 +680,7 @@ static void llama_model_quantize_impl(const std::string & fname_inp, const std::
 
     // keep_split requires that the weights are sorted by split index
     if (params->keep_split) {
-        std::sort(tensors.begin(), tensors.end(), [](const llama_model_loader::llama_tensor_weight * a, const llama_model_loader::llama_tensor_weight * b) {
+        std::sort(tensors.begin(), tensors.end(), [](const llama_lazy_model_loader::llama_tensor_weight * a, const llama_lazy_model_loader::llama_tensor_weight * b) {
             if (a->idx == b->idx) {
                 return a->offs < b->offs;
             }

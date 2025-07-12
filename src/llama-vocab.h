@@ -7,7 +7,7 @@
 #include <memory>
 
 struct LLM_KV;
-struct llama_model_loader;
+struct llama_lazy_model_loader;
 
 struct llama_vocab {
     struct token_data {
@@ -19,7 +19,7 @@ struct llama_vocab {
     llama_vocab();
     ~llama_vocab();
 
-    void load(llama_model_loader & ml, const LLM_KV & kv);
+    void load(llama_lazy_model_loader & ml, const LLM_KV & kv);
 
     std::string get_tokenizer_model() const;
     std::string get_tokenizer_pre() const;

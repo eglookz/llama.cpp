@@ -3,7 +3,7 @@
 #include "llama-chat.h"
 #include "llama-mmap.h"
 #include "llama-vocab.h"
-#include "llama-model-loader.h"
+#include "llama-lazy-model-loader.h"
 #include "llama-model-saver.h"
 #include "llama-model.h"
 
@@ -93,7 +93,7 @@ static int llama_model_load(const std::string & fname, std::vector<std::string> 
     model.t_start_us = tm.t_start_us;
 
     try {
-        llama_model_loader ml(fname, splits, params.use_mmap, params.check_tensors, params.kv_overrides, params.tensor_buft_overrides);
+        llama_lazy_model_loader ml(fname, splits, params.use_mmap, params.check_tensors, params.kv_overrides, params.tensor_buft_overrides);
 
         ml.print_info();
 
