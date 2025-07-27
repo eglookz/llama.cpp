@@ -1960,6 +1960,9 @@ bool llama_model::load_tensors(llama_lazy_model_loader & ml) {
             case LLM_ARCH_GRANITE:
             case LLM_ARCH_GRANITE_MOE:
                 {
+                    LLAMA_LOG_INFO(" >>>>>>>>>>>>>>>>>>>>>>> Arch = %s, Type = %s, n_layer = %d, n_embd = %d\n",
+                                   arch_name().c_str(), type_name().c_str(), n_layer, hparams.n_embd);
+
                     tok_embd = create_tensor(tn(LLM_TENSOR_TOKEN_EMBD, "weight"), {n_embd, n_vocab}, 0);
 
                     // output
