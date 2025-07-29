@@ -26,6 +26,9 @@ add_library(llama
             llama-memory-hybrid.cpp
             llama-memory-recurrent.cpp
             llama-mmap.cpp
+            llama-lazy-vector.h
+            llama-layer-wrapper.cpp
+            llama-layer-wrapper.h
             llama-lazy-model-loader.cpp
             llama-model-loader.cpp
             llama-model-saver.cpp

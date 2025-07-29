@@ -11,6 +11,9 @@
 #include <string>
 #include <unordered_map>
 #include <vector>
+#include "llama-lazy-vector.h"
+
+class llama_layer_wrapper;
 
 struct llama_cparams;
 struct llama_ubatch;
@@ -396,7 +399,8 @@ struct llama_model {
     struct ggml_tensor * per_layer_model_proj = nullptr;
     struct ggml_tensor * per_layer_proj_norm  = nullptr;
 
-    std::vector<llama_layer> layers;
+    // std::vector<llama_layer> layers;
+    llama_lazy_vector<llama_layer_wrapper> layers;
 
     llama_model_params params;
 

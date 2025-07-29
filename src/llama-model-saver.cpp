@@ -6,6 +6,7 @@
 #include "llama-hparams.h"
 #include "llama-model.h"
 #include "llama-vocab.h"
+#include "llama-layer-wrapper.h"
 
 #include <string>
 
@@ -269,7 +270,8 @@ void llama_model_saver::add_tensors_from_model() {
     add_tensor(model.cls_out);
     add_tensor(model.cls_out_b);
 
-    for (const struct llama_layer & layer : model.layers) {
+    for (const llama_layer_wrapper& wrapper : model.layers) {
+        const llama_layer& layer = static_cast<const llama_layer&>(wrapper);
         for (size_t i = 0; i < sizeof(layer)/sizeof(struct ggml_tensor *); ++i) {
             add_tensor(reinterpret_cast<const struct ggml_tensor * const *>(&layer)[i]);
         }

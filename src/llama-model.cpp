@@ -5,6 +5,8 @@
 #include "llama-batch.h"
 #include "llama-cparams.h"
 #include "llama-lazy-model-loader.h"
+#include "llama-lazy-vector.h"
+#include "llama-layer-wrapper.h"
 
 #include "llama-kv-cache-unified.h"
 #include "llama-kv-cache-unified-iswa.h"

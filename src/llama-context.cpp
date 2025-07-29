@@ -6,6 +6,7 @@
 #include "llama-memory.h"
 #include "llama-mmap.h"
 #include "llama-model.h"
+#include "llama-layer-wrapper.h"
 
 #include <cinttypes>
 #include <cstring>
@@ -2060,7 +2061,8 @@ void llama_context::opt_init(struct llama_model * model, struct llama_opt_params
     llama_set_param(model->cls_out,         param_filter, param_filter_ud);
     llama_set_param(model->cls_out_b,       param_filter, param_filter_ud);
 
-    for (struct llama_layer & layer : model->layers) {
+    for (llama_layer_wrapper& wrapper : model->layers) {
+        llama_layer& layer = wrapper;
         for (size_t i = 0; i < sizeof(layer)/sizeof(struct ggml_tensor *); ++i) {
             llama_set_param(reinterpret_cast<struct ggml_tensor **>(&layer)[i], param_filter, param_filter_ud);
         }
