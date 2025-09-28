@@ -3,6 +3,7 @@
 #include <cassert>
 #include <functional>
 #include <memory>
+#include <iostream>
 #include <stdexcept>
 
 template <typename T>
@@ -27,28 +28,26 @@ public:
 
     // Изменение размера
     void resize(size_t new_size) {
-        size_ = new_size;
+        std::cout << ">>>>>>> llama_layer new size = " << new_size - 1 << "\n";
+        size_ = new_size - 1; // -1, потому что 0-й слой — это эмбеддинги
         if (current_index_ >= new_size) {
-            current_index_ = -1;
+            current_index_ = static_cast<size_t>(-1);
             current_.reset();
         }
     }
 
     T& operator[](size_t index) {
-        assert(index < size_ && "Index out of bounds");
-        if (index != current_index_) {
-            current_ = loader_(index);
-            current_index_ = index;
-        }
+        std::cout << "!!!!!!!!! llama_layer[" << index + 1 << "] was accessed\n";
+        std::cout << "!!!!!!!!! current index = " << current_index_ + 1 << "\n";
+        ensure_loaded(index);
         return *current_;
     }
 
     // const version — только если слой уже загружен!
     const T& operator[](size_t index) const {
-        assert(index < size_);
-        if (index != current_index_) {
-            throw std::runtime_error("Cannot access llama_lazy_vector in const context without preloading");
-        }
+        std::cout << "llama_layer[" << index + 1 << "] was accessed\n";
+        std::cout << "current index = " << current_index_ + 1 << "\n";
+        ensure_loaded(index);
         return *current_;
     }
 
@@ -88,9 +87,18 @@ public:
     ConstIterator end()   const { return ConstIterator(*this, size_); }
 
 private:
+    void ensure_loaded(size_t index) const {
+        assert(index < size_ && "Index out of bounds");
+        assert(loader_ && "Loader is not set");
+        if (current_index_ != index || !current_) {
+            current_ = loader_(static_cast<int>(index));
+            current_index_ = index;
+        }
+    }
+
     size_t size_ = 0;
     loader_func loader_ = nullptr;
 
-    size_t current_index_ = -1;
-    std::unique_ptr<T> current_ = nullptr;
+    mutable size_t current_index_ = static_cast<size_t>(-1);
+    mutable std::unique_ptr<T> current_ = nullptr;
 };

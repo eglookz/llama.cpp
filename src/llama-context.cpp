@@ -22,6 +22,7 @@ llama_context::llama_context(
               llama_context_params params) :
     model(model),
     balloc(std::make_unique<llama_batch_allocr>(model.hparams.n_pos_per_embd())) {
+    std::cout << "XXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXX\n";
     LLAMA_LOG_INFO("%s: constructing llama_context\n", __func__);
 
     t_start_us = model.t_start_us;

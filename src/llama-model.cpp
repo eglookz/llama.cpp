@@ -2056,7 +2056,11 @@ bool llama_model::load_tensors(llama_lazy_model_loader & ml) {
             return ml.create_tensor(ctx, tn, ne, flags);
         };
 
+        // layers.init(n_layer, [](int i) {
+        //     return std::make_unique<llama_layer_wrapper>(i);
+        // });
         layers.resize(n_layer);
+        LLAMA_LOG_INFO(" ################ Layers size = %zu\n", layers.size());
 
         // TODO: move to a separate function
         const auto tn = LLM_TN(arch);
@@ -2071,18 +2075,25 @@ bool llama_model::load_tensors(llama_lazy_model_loader & ml) {
                                    arch_name().c_str(), type_name().c_str(), n_layer, hparams.n_embd);
 
                     tok_embd = create_tensor(tn(LLM_TENSOR_TOKEN_EMBD, "weight"), {n_embd, n_vocab}, 0);
+                    LLAMA_LOG_INFO(" 11111111111111111111\n");
 
                     // output
                     output_norm = create_tensor(tn(LLM_TENSOR_OUTPUT_NORM, "weight"), {n_embd}, 0);
                     output      = create_tensor(tn(LLM_TENSOR_OUTPUT,      "weight"), {n_embd, n_vocab}, TENSOR_NOT_REQUIRED);
+                    LLAMA_LOG_INFO(" 22222222222222222222\n");
 
                     // if output is NULL, init from the input tok embed
                     if (output == NULL) {
                         output = create_tensor(tn(LLM_TENSOR_TOKEN_EMBD, "weight"), {n_embd, n_vocab}, TENSOR_DUPLICATED);
                     }
+                    LLAMA_LOG_INFO(" 33333333333333333333\n");
 
                     for (int i = 0; i < n_layer; ++i) {
+                        LLAMA_LOG_INFO(" ************** Loading layer %d / %d\n",
+                                   i + 1, n_layer);
                         auto & layer = layers[i];
+                        // LLAMA_LOG_INFO(" ************** Loading layer %d / %d\n",
+                        //            i, n_layer);
 
                         layer.attn_norm = create_tensor(tn(LLM_TENSOR_ATTN_NORM, "weight", i), {n_embd}, 0);
 
