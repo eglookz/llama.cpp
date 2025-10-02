@@ -276,7 +276,7 @@ llama_context::llama_context(
         if (pipeline_parallel) {
             LLAMA_LOG_INFO("%s: pipeline parallelism enabled (n_copies=%d)\n", __func__, ggml_backend_sched_get_n_copies(sched.get()));
         }
-    }
+    }        
 
     // reserve worst-case graph
     if (!hparams.vocab_only && memory) {
@@ -302,7 +302,11 @@ llama_context::llama_context(
 
         // reserve pp (prompt processing) graph first so that buffers are only allocated once
         {
+            // LLAMA_LOG_WARN("JJJJJJJJJJJJJJJJJJJJJJJJJJJJJJJJJJJJJjJjJj");
+            // mctx.get();
+            // LLAMA_LOG_WARN("PPPPPPPPPPPPPPPPPPPPPPPPP");
             auto * gf = graph_reserve(n_tokens, n_seqs, n_tokens, mctx.get());
+            // LLAMA_LOG_WARN("WWWWWWWWWWWWWWWWWWWWWWWWWWWWWWWWWWWWWWWWWWWWWWWWWWWWWWWW22342342");
             if (!gf) {
                 throw std::runtime_error("failed to allocate compute pp buffers");
             }
@@ -2294,7 +2298,7 @@ llama_context * llama_init_from_model(
     if (ggml_is_quantized(params.type_v) && !params.flash_attn) {
         LLAMA_LOG_ERROR("%s: V cache quantization requires flash_attn\n", __func__);
         return nullptr;
-    }
+    } 
 
     try {
         auto * ctx = new llama_context(*model, params);

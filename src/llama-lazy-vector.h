@@ -5,6 +5,7 @@
 #include <memory>
 #include <iostream>
 #include <stdexcept>
+#include <cstddef>
 
 template <typename T>
 class llama_lazy_vector {
@@ -28,25 +29,29 @@ public:
 
     // Изменение размера
     void resize(size_t new_size) {
-        std::cout << ">>>>>>> llama_layer new size = " << new_size - 1 << "\n";
-        size_ = new_size - 1; // -1, потому что 0-й слой — это эмбеддинги
-        if (current_index_ >= new_size) {
-            current_index_ = static_cast<size_t>(-1);
+        std::cout << ">>>>>>> llama_layer new size = " << new_size << "\n";
+        // Прежняя версия уменьшала размер на 1 — это приводит к неверным
+        // границам и потенциальным выходам за пределы (segfault).
+        // Теперь сохраняем ожидаемый размер напрямую.
+        size_ = new_size;
+        // Если текущий загруженный индекс вне новых границ — сбрасываем кеш.
+        if (current_index_ >= static_cast<std::ptrdiff_t>(new_size)) {
+            current_index_ = -1;
             current_.reset();
         }
     }
 
     T& operator[](size_t index) {
-        std::cout << "!!!!!!!!! llama_layer[" << index + 1 << "] was accessed\n";
-        std::cout << "!!!!!!!!! current index = " << current_index_ + 1 << "\n";
+        std::cout << "!!!!!!!!! llama_layer[" << index << "] was accessed\n";
+        std::cout << "!!!!!!!!! prev current_index = " << current_index_ << "\n";
         ensure_loaded(index);
         return *current_;
     }
 
     // const version — только если слой уже загружен!
     const T& operator[](size_t index) const {
-        std::cout << "llama_layer[" << index + 1 << "] was accessed\n";
-        std::cout << "current index = " << current_index_ + 1 << "\n";
+        std::cout << "llama_layer[" << index << "] was accessed\n";
+        std::cout << "prev current index = " << current_index_ << "\n";
         ensure_loaded(index);
         return *current_;
     }
@@ -88,17 +93,26 @@ public:
 
 private:
     void ensure_loaded(size_t index) const {
-        assert(index < size_ && "Index out of bounds");
-        assert(loader_ && "Loader is not set");
-        if (current_index_ != index || !current_) {
+        if (!(index < size_)) {
+            throw std::out_of_range("Index out of bounds");
+        }
+        if (!loader_) {
+            throw std::runtime_error("Loader is not set");
+        }
+        if (current_index_ != static_cast<std::ptrdiff_t>(index) || !current_) {
             current_ = loader_(static_cast<int>(index));
-            current_index_ = index;
+            if (!current_) {
+                throw std::runtime_error("Loader returned null pointer");
+            }
+            current_index_ = static_cast<std::ptrdiff_t>(index);
+            std::cout << "NEW current index = " << current_index_ << "\n";
         }
     }
 
     size_t size_ = 0;
     loader_func loader_ = nullptr;
 
-    mutable size_t current_index_ = static_cast<size_t>(-1);
+    // Используем знаковый тип для хранения «-1» как маркера «нет загруженного">
+    mutable std::ptrdiff_t current_index_ = -1;
     mutable std::unique_ptr<T> current_ = nullptr;
 };
