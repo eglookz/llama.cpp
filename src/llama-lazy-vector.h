@@ -17,50 +17,49 @@ public:
 
     // Основной конструктор
     llama_lazy_vector(size_t size, loader_func loader)
-        : size_(size), loader_(std::move(loader)), current_index_(-1) {}
+        : size_(size), loader_(std::move(loader)) {
+        items_.resize(size_);
+    }
 
     // Метод инициализации (если использован дефолтный конструктор)
     void init(size_t size, loader_func loader) {
         size_ = size;
         loader_ = std::move(loader);
-        current_index_ = -1;
-        current_.reset();
+        items_.clear();
+        items_.resize(size_);
     }
 
     // Изменение размера
     void resize(size_t new_size) {
-        std::cout << ">>>>>>> llama_layer new size = " << new_size << "\n";
+    std::cout << ">>>>>>> llama_layer new size = " << new_size << "\n";
         // Прежняя версия уменьшала размер на 1 — это приводит к неверным
         // границам и потенциальным выходам за пределы (segfault).
         // Теперь сохраняем ожидаемый размер напрямую.
         size_ = new_size;
-        // Если текущий загруженный индекс вне новых границ — сбрасываем кеш.
-        if (current_index_ >= static_cast<std::ptrdiff_t>(new_size)) {
-            current_index_ = -1;
-            current_.reset();
-        }
+        // Уменьшаем или расширяем вектор указателей элементов.
+        items_.resize(size_);
     }
 
     T& operator[](size_t index) {
-        std::cout << "!!!!!!!!! llama_layer[" << index << "] was accessed\n";
-        std::cout << "!!!!!!!!! prev current_index = " << current_index_ << "\n";
+        //// std::cout << "!!!!!!!!! llama_layer[" << index << "] was accessed\n";
+        //// std::cout << "!!!!!!!!! prev current_index = " << current_index_ << "\n";
         ensure_loaded(index);
-        return *current_;
+        return *items_.at(index);
     }
 
     // const version — только если слой уже загружен!
     const T& operator[](size_t index) const {
-        std::cout << "llama_layer[" << index << "] was accessed\n";
-        std::cout << "prev current index = " << current_index_ << "\n";
+        //// std::cout << "llama_layer[" << index << "] was accessed\n";
+        //// std::cout << "prev current index = " << current_index_ << "\n";
         ensure_loaded(index);
-        return *current_;
+        return *items_.at(index);
     }
 
     size_t size() const { return size_; }
 
     class Iterator {
     public:
-        Iterator(llama_lazy_vector& vec, size_t pos) : vec_(vec), pos_(pos) {}
+    Iterator(llama_lazy_vector& vec, size_t pos) : vec_(vec), pos_(pos) {}
 
         T& operator*() { return vec_[pos_]; }
         Iterator& operator++() { ++pos_; return *this; }
@@ -79,7 +78,7 @@ public:
     public:
         ConstIterator(const llama_lazy_vector& vec, size_t pos) : vec_(vec), pos_(pos) {}
 
-        const T& operator*() const { return vec_[pos_]; }
+    const T& operator*() const { return vec_[pos_]; }
         ConstIterator& operator++() { ++pos_; return *this; }
         bool operator!=(const ConstIterator& other) const { return pos_ != other.pos_; }
 
@@ -99,20 +98,34 @@ private:
         if (!loader_) {
             throw std::runtime_error("Loader is not set");
         }
-        if (current_index_ != static_cast<std::ptrdiff_t>(index) || !current_) {
-            current_ = loader_(static_cast<int>(index));
-            if (!current_) {
+        // if element not yet created, call loader and store the unique_ptr
+        if (index >= items_.size() || !items_.at(index)) {
+            if (index >= items_.size()) {
+                // items_ may be smaller than logical size_ if nothing has been
+                // loaded yet; ensure it has at least size_ elements so we can
+                // store at the requested index (index < size_ is guaranteed).
+                items_.resize(size_);
+            }
+            items_[index] = loader_(static_cast<int>(index));
+            if (!items_[index]) {
                 throw std::runtime_error("Loader returned null pointer");
             }
-            current_index_ = static_cast<std::ptrdiff_t>(index);
-            std::cout << "NEW current index = " << current_index_ << "\n";
         }
     }
 
     size_t size_ = 0;
     loader_func loader_ = nullptr;
 
-    // Используем знаковый тип для хранения «-1» как маркера «нет загруженного">
-    mutable std::ptrdiff_t current_index_ = -1;
-    mutable std::unique_ptr<T> current_ = nullptr;
+    // Храним по одному указателю на каждый элемент — это предотвращает
+    // уничтожение ранее созданных объектов при загрузке нового элемента.
+    // Это важно: построение графа может делать указания на созданные
+    // объекты, поэтому они не должны разрушаться, пока граф их использует.
+    mutable std::vector<std::unique_ptr<T>> items_;
+
+    // Освободить конкретный индекс (используется для явного выгрузки слоя)
+    void unload(size_t index) {
+        if (index < items_.size()) {
+            items_[index].reset();
+        }
+    }
 };

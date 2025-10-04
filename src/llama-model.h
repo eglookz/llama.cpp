@@ -423,7 +423,7 @@ struct llama_model {
     void load_arch   (llama_lazy_model_loader & ml);
     void load_hparams(llama_lazy_model_loader & ml);
     void load_vocab  (llama_lazy_model_loader & ml);
-    bool load_tensors(llama_lazy_model_loader & ml); // returns false if cancelled by progress_callback
+    bool load_tensors(std::shared_ptr<llama_lazy_model_loader> ml); // returns false if cancelled by progress_callback
 
     std::string arch_name() const;
     std::string type_name() const;
