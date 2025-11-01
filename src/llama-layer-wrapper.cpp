@@ -7,5 +7,5 @@ llama_layer_wrapper::llama_layer_wrapper(int index)
 }
 
 llama_layer_wrapper::~llama_layer_wrapper() {
-    //// std::cout << "llama_layer[" << m_index << "] was destroyed\n";
+    // std::cout << "llama_layer[" << m_index << "] was destroyed\n";
 }

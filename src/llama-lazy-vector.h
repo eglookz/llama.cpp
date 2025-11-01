@@ -12,16 +12,13 @@ class llama_lazy_vector {
 public:
     using loader_func = std::function<std::unique_ptr<T>(int index)>;
 
-    // Дефолтный конструктор (отложенная инициализация)
     llama_lazy_vector() = default;
 
-    // Основной конструктор
     llama_lazy_vector(size_t size, loader_func loader)
         : size_(size), loader_(std::move(loader)) {
         items_.resize(size_);
     }
 
-    // Метод инициализации (если использован дефолтный конструктор)
     void init(size_t size, loader_func loader) {
         size_ = size;
         loader_ = std::move(loader);
@@ -29,28 +26,27 @@ public:
         items_.resize(size_);
     }
 
-    // Изменение размера
     void resize(size_t new_size) {
-    std::cout << ">>>>>>> llama_layer new size = " << new_size << "\n";
-        // Прежняя версия уменьшала размер на 1 — это приводит к неверным
-        // границам и потенциальным выходам за пределы (segfault).
-        // Теперь сохраняем ожидаемый размер напрямую.
+        std::cout << ">>>>>>> llama_layer new size = " << new_size << "\n";
         size_ = new_size;
-        // Уменьшаем или расширяем вектор указателей элементов.
         items_.resize(size_);
     }
 
     T& operator[](size_t index) {
-        //// std::cout << "!!!!!!!!! llama_layer[" << index << "] was accessed\n";
-        //// std::cout << "!!!!!!!!! prev current_index = " << current_index_ << "\n";
+        // Выгружаем предыдущий слой (кроме слоя 0)
+        if (index > 2) {
+            unload(index - 1);
+        }
+        
+        // ensure_loaded перезагрузит слой, если он был выгружен
         ensure_loaded(index);
         return *items_.at(index);
     }
 
-    // const version — только если слой уже загружен!
     const T& operator[](size_t index) const {
-        //// std::cout << "llama_layer[" << index << "] was accessed\n";
-        //// std::cout << "prev current index = " << current_index_ << "\n";
+        if (index > 2) {
+            unload(index - 1);
+        }
         ensure_loaded(index);
         return *items_.at(index);
     }
@@ -59,12 +55,10 @@ public:
 
     class Iterator {
     public:
-    Iterator(llama_lazy_vector& vec, size_t pos) : vec_(vec), pos_(pos) {}
-
+        Iterator(llama_lazy_vector& vec, size_t pos) : vec_(vec), pos_(pos) {}
         T& operator*() { return vec_[pos_]; }
         Iterator& operator++() { ++pos_; return *this; }
         bool operator!=(const Iterator& other) const { return pos_ != other.pos_; }
-
     private:
         llama_lazy_vector& vec_;
         size_t pos_;
@@ -73,15 +67,12 @@ public:
     Iterator begin() { return Iterator(*this, 0); }
     Iterator end()   { return Iterator(*this, size_); }
 
-
     class ConstIterator {
     public:
         ConstIterator(const llama_lazy_vector& vec, size_t pos) : vec_(vec), pos_(pos) {}
-
-    const T& operator*() const { return vec_[pos_]; }
+        const T& operator*() const { return vec_[pos_]; }
         ConstIterator& operator++() { ++pos_; return *this; }
         bool operator!=(const ConstIterator& other) const { return pos_ != other.pos_; }
-
     private:
         const llama_lazy_vector& vec_;
         size_t pos_;
@@ -89,6 +80,60 @@ public:
 
     ConstIterator begin() const { return ConstIterator(*this, 0); }
     ConstIterator end()   const { return ConstIterator(*this, size_); }
+
+    // Освобождаем только тяжёлые веса, но оставляем структуру слоя
+    void unload(size_t index) const {
+        if (!(index < size_)) {
+            return; // Безопасно игнорируем
+        }
+        
+        if (index >= items_.size() || !items_[index]) {
+            return; // Слой уже выгружен
+        }
+
+        // std::cout << ">>> Unloading layer " << index << "\n";
+
+        // НЕ ДЕЛАЕМ items_[index].reset()!
+        // Вместо этого обнуляем только тяжёлые веса
+        
+        // Attention веса (самые тяжёлые)
+        items_[index]->wq = nullptr;
+        items_[index]->wk = nullptr;
+        items_[index]->wv = nullptr;
+        items_[index]->wo = nullptr;
+
+        // Biases
+        items_[index]->bq = nullptr;
+        items_[index]->bk = nullptr;
+        items_[index]->bv = nullptr;
+        items_[index]->bo = nullptr;
+
+        // Нормализации
+        items_[index]->attn_norm = nullptr;
+        items_[index]->ffn_norm = nullptr;
+
+        // FFN веса
+        items_[index]->ffn_gate = nullptr;
+        items_[index]->ffn_down = nullptr;
+        items_[index]->ffn_up = nullptr;
+        
+        // MoE веса (если есть)
+        items_[index]->ffn_gate_inp = nullptr;
+        items_[index]->ffn_gate_exps = nullptr;
+        items_[index]->ffn_down_exps = nullptr;
+        items_[index]->ffn_up_exps = nullptr;
+
+        // ROPE тензоры НЕ трогаем (они shared для всех слоёв)
+        // Только для слоя 0 они реально существуют
+    }
+
+    // Принудительная полная выгрузка (удаление структуры слоя)
+    void unload_complete(size_t index) const {
+        if (index < items_.size()) {
+            std::cout << ">>> Complete unload of layer " << index << "\n";
+            items_[index].reset();
+        }
+    }
 
 private:
     void ensure_loaded(size_t index) const {
@@ -98,14 +143,26 @@ private:
         if (!loader_) {
             throw std::runtime_error("Loader is not set");
         }
-        // if element not yet created, call loader and store the unique_ptr
-        if (index >= items_.size() || !items_.at(index)) {
-            if (index >= items_.size()) {
-                // items_ may be smaller than logical size_ if nothing has been
-                // loaded yet; ensure it has at least size_ elements so we can
-                // store at the requested index (index < size_ is guaranteed).
-                items_.resize(size_);
+
+        if (index >= items_.size()) {
+            items_.resize(size_);
+        }
+
+        // КЛЮЧЕВОЕ ИЗМЕНЕНИЕ: проверяем не только !items_[index],
+        // но и загружен ли слой (проверяем основные веса)
+        bool need_reload = !items_[index];
+        
+        if (items_[index]) {
+            // Слой существует, но проверяем, не выгружены ли веса
+            // Проверяем один из критичных тензоров
+            if (!items_[index]->wq) {
+                need_reload = true;
+                // std::cout << ">>> Layer " << index << " weights unloaded, reloading...\n";
             }
+        }
+
+        if (need_reload) {
+            // std::cout << ">>> Loading layer " << index << "\n";
             items_[index] = loader_(static_cast<int>(index));
             if (!items_[index]) {
                 throw std::runtime_error("Loader returned null pointer");
@@ -115,17 +172,5 @@ private:
 
     size_t size_ = 0;
     loader_func loader_ = nullptr;
-
-    // Храним по одному указателю на каждый элемент — это предотвращает
-    // уничтожение ранее созданных объектов при загрузке нового элемента.
-    // Это важно: построение графа может делать указания на созданные
-    // объекты, поэтому они не должны разрушаться, пока граф их использует.
     mutable std::vector<std::unique_ptr<T>> items_;
-
-    // Освободить конкретный индекс (используется для явного выгрузки слоя)
-    void unload(size_t index) {
-        if (index < items_.size()) {
-            items_[index].reset();
-        }
-    }
 };
