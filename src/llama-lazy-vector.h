@@ -33,20 +33,12 @@ public:
     }
 
     T& operator[](size_t index) {
-        // Выгружаем предыдущий слой (кроме слоя 0)
-        if (index > 2) {
-            unload(index - 1);
-        }
-        
-        // ensure_loaded перезагрузит слой, если он был выгружен
+        // Никаких автоматических выгрузок здесь: управление выгрузкой вне контейнера
         ensure_loaded(index);
         return *items_.at(index);
     }
 
     const T& operator[](size_t index) const {
-        if (index > 2) {
-            unload(index - 1);
-        }
         ensure_loaded(index);
         return *items_.at(index);
     }
@@ -81,51 +73,8 @@ public:
     ConstIterator begin() const { return ConstIterator(*this, 0); }
     ConstIterator end()   const { return ConstIterator(*this, size_); }
 
-    // Освобождаем только тяжёлые веса, но оставляем структуру слоя
-    void unload(size_t index) const {
-        if (!(index < size_)) {
-            return; // Безопасно игнорируем
-        }
-        
-        if (index >= items_.size() || !items_[index]) {
-            return; // Слой уже выгружен
-        }
-
-        // std::cout << ">>> Unloading layer " << index << "\n";
-
-        // НЕ ДЕЛАЕМ items_[index].reset()!
-        // Вместо этого обнуляем только тяжёлые веса
-        
-        // Attention веса (самые тяжёлые)
-        items_[index]->wq = nullptr;
-        items_[index]->wk = nullptr;
-        items_[index]->wv = nullptr;
-        items_[index]->wo = nullptr;
-
-        // Biases
-        items_[index]->bq = nullptr;
-        items_[index]->bk = nullptr;
-        items_[index]->bv = nullptr;
-        items_[index]->bo = nullptr;
-
-        // Нормализации
-        items_[index]->attn_norm = nullptr;
-        items_[index]->ffn_norm = nullptr;
-
-        // FFN веса
-        items_[index]->ffn_gate = nullptr;
-        items_[index]->ffn_down = nullptr;
-        items_[index]->ffn_up = nullptr;
-        
-        // MoE веса (если есть)
-        items_[index]->ffn_gate_inp = nullptr;
-        items_[index]->ffn_gate_exps = nullptr;
-        items_[index]->ffn_down_exps = nullptr;
-        items_[index]->ffn_up_exps = nullptr;
-
-        // ROPE тензоры НЕ трогаем (они shared для всех слоёв)
-        // Только для слоя 0 они реально существуют
-    }
+    // В динамическом RAM режиме контейнер не занимается выгрузкой — no-op.
+    void unload(size_t index) const { (void) index; }
 
     // Принудительная полная выгрузка (удаление структуры слоя)
     void unload_complete(size_t index) const {
@@ -148,21 +97,7 @@ private:
             items_.resize(size_);
         }
 
-        // КЛЮЧЕВОЕ ИЗМЕНЕНИЕ: проверяем не только !items_[index],
-        // но и загружен ли слой (проверяем основные веса)
-        bool need_reload = !items_[index];
-        
-        if (items_[index]) {
-            // Слой существует, но проверяем, не выгружены ли веса
-            // Проверяем один из критичных тензоров
-            if (!items_[index]->wq) {
-                need_reload = true;
-                // std::cout << ">>> Layer " << index << " weights unloaded, reloading...\n";
-            }
-        }
-
-        if (need_reload) {
-            // std::cout << ">>> Loading layer " << index << "\n";
+        if (!items_[index]) {
             items_[index] = loader_(static_cast<int>(index));
             if (!items_[index]) {
                 throw std::runtime_error("Loader returned null pointer");

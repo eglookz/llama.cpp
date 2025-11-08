@@ -418,6 +418,10 @@ struct llama_model::impl {
     std::vector<layer_dev> dev_layer;
 
     bool has_tensor_overrides;
+
+    // dynamic RAM layer spans (file offset ranges) per repeating layer
+    struct layer_span { size_t first = 0; size_t last = 0; bool loaded = true; };
+    mutable std::vector<layer_span> layer_spans; // size = hparams.n_layer after load
 };
 
 llama_model::llama_model(const llama_model_params & params) : params(params), pimpl(std::make_unique<impl>()) {
@@ -425,6 +429,54 @@ llama_model::llama_model(const llama_model_params & params) : params(params), pi
 }
 
 llama_model::~llama_model() {}
+
+// Compute per-layer mmap spans by scanning tensor weights names and grouping by layer index
+static int extract_layer_index(const std::string & name) {
+    // Expected patterns often contain ".{layer}." or "blk.{layer}."; we try blk.N first
+    int layer = -1;
+    if (sscanf(name.c_str(), "blk.%d.", &layer) == 1) {
+        return layer;
+    }
+    // fallback: find ".<digits>." substring
+    for (size_t i = 0; i + 3 < name.size(); ++i) {
+        if (name[i] == '.') {
+            int val = 0; char tail = 0;
+            if (sscanf(name.c_str() + i, ".%d%c", &val, &tail) == 2 && (tail == '.' || tail == '_' )) {
+                return val;
+            }
+        }
+    }
+    return -1;
+}
+
+void llama_model::ensure_layer(int il) const {
+    if (il < 0 || il >= (int) pimpl->layer_spans.size()) return;
+    auto & span = pimpl->layer_spans[il];
+    if (span.loaded) return; // pages already resident (or will fault in automatically)
+    // Access pattern itself will fault pages back; we just mark as loaded
+    span.loaded = true;
+}
+
+void llama_model::unload_layer(int il) const {
+    if (il < 0 || il >= (int) pimpl->layer_spans.size()) return;
+    auto & span = pimpl->layer_spans[il];
+    if (!span.loaded) return;
+    // Advise OS to drop pages; only works if mmapped
+    for (auto & mmap_ptr : pimpl->mappings) {
+        // Our offsets are relative to individual files; span.first/last refer to file offsets
+        // We cannot mix files for a single layer efficiently; spans were accumulated per layer per file range union.
+        // For simplicity we madvise only ranges that fall inside this mapping.
+        size_t file_size = mmap_ptr->size();
+        if (span.first < file_size) {
+            size_t local_first = span.first;
+            size_t local_last  = std::min(span.last, file_size);
+            if (local_last > local_first) {
+                mmap_ptr->advise_dontneed(local_first, local_last);
+            }
+        }
+    }
+    span.loaded = false;
+}
 
 void llama_model::load_stats(llama_lazy_model_loader & ml) {
     pimpl->n_elements = ml.n_elements;
@@ -5421,6 +5473,27 @@ bool llama_model::load_tensors(std::shared_ptr<llama_lazy_model_loader> ml) {
     if (use_mmap_buffer) {
         for (auto & mapping : ml->mappings) {
             pimpl->mappings.emplace_back(std::move(mapping));
+        }
+    }
+
+    // Build layer spans (min/max file offsets) for dynamic RAM if mmap is used
+    if (ml->use_mmap) {
+        pimpl->layer_spans.assign(hparams.n_layer, impl::layer_span{});
+        // initialize first>last sentinel so min/max work
+        for (auto & ls : pimpl->layer_spans) { ls.first = (size_t)-1; ls.last = 0; ls.loaded = true; }
+        for (const auto & kv : ml->weights_map) {
+            const std::string & tname = kv.first;
+            int layer = extract_layer_index(tname);
+            if (layer < 0 || layer >= (int)hparams.n_layer) continue;
+            size_t offs = kv.second.offs;
+            size_t end  = offs + ggml_nbytes(kv.second.tensor);
+            auto & span = pimpl->layer_spans[layer];
+            if (offs < span.first) span.first = offs;
+            if (end  > span.last ) span.last  = end;
+        }
+        // normalize empty spans
+        for (auto & span : pimpl->layer_spans) {
+            if (span.first == (size_t)-1) { span.first = span.last = 0; }
         }
     }
 

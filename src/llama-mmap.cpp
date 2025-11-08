@@ -354,6 +354,28 @@ struct llama_mmap::impl {
         mapped_fragments = std::move(new_mapped_fragments);
     }
 
+    void advise_fragment(size_t first, size_t last) {
+        int page_size = sysconf(_SC_PAGESIZE);
+        align_range(&first, &last, page_size);
+        size_t len = last - first;
+        if (len == 0) {
+            return;
+        }
+        void * page_start = (uint8_t *) addr + first;
+#if defined(POSIX_MADV_DONTNEED)
+        if (posix_madvise(page_start, len, POSIX_MADV_DONTNEED)) {
+            LLAMA_LOG_WARN("warning: posix_madvise(.., POSIX_MADV_DONTNEED) failed: %s\n", strerror(errno));
+        }
+#elif defined(MADV_DONTNEED)
+        if (madvise(page_start, len, MADV_DONTNEED)) {
+            LLAMA_LOG_WARN("warning: madvise(.., MADV_DONTNEED) failed: %s\n", strerror(errno));
+        }
+#else
+        GGML_UNUSED(page_start);
+        GGML_UNUSED(len);
+#endif
+    }
+
     ~impl() {
         for (const auto & frag : mapped_fragments) {
             if (munmap((char *) addr + frag.first, frag.second - frag.first)) {
@@ -445,6 +467,7 @@ size_t llama_mmap::size() const { return pimpl->size; }
 void * llama_mmap::addr() const { return pimpl->addr; }
 
 void llama_mmap::unmap_fragment(size_t first, size_t last) { pimpl->unmap_fragment(first, last); }
+void llama_mmap::advise_dontneed(size_t first, size_t last) { pimpl->advise_fragment(first, last); }
 
 #if defined(_POSIX_MEMLOCK_RANGE) || defined(_WIN32)
 const bool llama_mmap::SUPPORTED  = true;

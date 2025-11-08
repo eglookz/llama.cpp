@@ -43,6 +43,9 @@ struct llama_mmap {
     void * addr() const;
 
     void unmap_fragment(size_t first, size_t last);
+    // Advise OS that pages in [first,last) are not needed; they can be dropped (lazy re-fault on access).
+    // Range is file-offset based within this mapping. If not supported on platform, this is a no-op.
+    void advise_dontneed(size_t first, size_t last);
 
     static const bool SUPPORTED;
 

@@ -767,6 +767,16 @@ llm_graph_result * llama_context::process_ubatch(const llama_ubatch & ubatch, ll
         return nullptr;
     }
 
+    // Dynamic RAM: after successful compute, we can advise the OS to drop file-backed pages
+    // for repeating layers. This keeps tensor headers stable while reducing RSS between steps.
+    // If the model is not mmapped, layer_spans will be empty and these calls are no-ops.
+    {
+        const int32_t n_layers = (int32_t) model.hparams.n_layer;
+        for (int32_t il = 0; il < n_layers; ++il) {
+            model.unload_layer(il);
+        }
+    }
+
     ret = GGML_STATUS_SUCCESS;
 
     return res;
@@ -1456,6 +1466,8 @@ ggml_status llama_context::graph_compute(
 llm_graph_cb llama_context::graph_get_cb() const {
     return [&](const llama_ubatch & ubatch, ggml_tensor * cur, const char * name, int il) {
         if (il >= 0) {
+            // ensure the corresponding layer is marked as resident before building nodes for it
+            model.ensure_layer(il);
             ggml_format_name(cur, "%s-%d", name, il);
         } else {
             ggml_set_name(cur, name);

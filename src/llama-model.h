@@ -416,6 +416,10 @@ struct llama_model {
     int64_t t_load_us  = 0;
     int64_t t_start_us = 0;
 
+    // Dynamic RAM helpers: mark layer pages as reclaimable (madvise) or ensure loaded.
+    void unload_layer(int il) const;
+    void ensure_layer(int il) const;
+
     explicit llama_model(const struct llama_model_params & params);
     ~llama_model();
 
